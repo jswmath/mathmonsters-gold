@@ -5297,24 +5297,36 @@ function mmOpen(){ if(document.getElementById('mmoverlay'))return; if(!S||scene!
  function mount(){
   box.hidden=true;box.style.display='none';hideTb();held.length=0;
   arena=B={o:{kind:'online'},theme:CUR?.theme||'forest',a:{eX:0,eY:0,pX:0,pY:0,eVis:true,pVis:true,eAlpha:1,pAlpha:1,eScale:1,pScale:1,flash:0}};
-  scene='battle';panel=document.createElement('div');panel.className='box';
+  scene='battle';offKeys=pushHandler(key=>{
+   if(picking||!panel||panel.hidden)return;
+   const buttons=[...panel.querySelectorAll('button')];if(!buttons.length)return;
+   const current=Math.max(0,buttons.indexOf(document.activeElement));
+   if(DIRS.includes(key))buttons[(current+(['left','up'].includes(key)?buttons.length-1:1))%buttons.length].focus();
+   else if(key==='a')buttons[current].click();
+   else if(key==='b')panel.querySelector('[data-back]')?.click();
+  });panel=document.createElement('div');panel.className='box';
   panel.style='position:absolute;inset:auto 1% 1%;z-index:8;padding:1cqw;font-size:3.4cqw;pointer-events:auto';ui.append(panel);
  }
  function project(st){for(const [slot,k] of [['p',own()],['e',other(own())]]){const m=mon(st,k);arena[slot]={sp:m.sp,lvl:m.lvl,hp:m.hp,maxhp:m.maxhp,xp:0};}hud();}
- function button(text,fn){const b=document.createElement('button');b.type='button';b.textContent=text;b.style='font:inherit;padding:.35em;margin:.12em;cursor:pointer';b.onclick=fn;panel.append(b);}
+ function button(text,fn){const b=document.createElement('button');b.type='button';b.textContent=text;b.style='font:inherit;padding:.35em;margin:.12em;cursor:pointer';b.onclick=fn;panel.append(b);if(text==='뒤로')b.dataset.back='1';if(panel.querySelectorAll('button').length===1)b.focus();}
  function render(st,menu='main',text=st.log,locked=false){
   panel.replaceChildren();const line=document.createElement('div');line.textContent=text;panel.append(line);
   if(locked)return;
   if(st.done){button(st.winner===own()?'승리! · 나가기':'패배 · 나가기',exit);return;}
-  if(st.turn!==own()){button('상대 차례 · 나가기',exit);return;}
+  if(submitted){button('나가기',exit);return;}
   if(menu==='moves'){
-   const m=mon(st,own());m.moves.forEach((name,i)=>{const mv=MOVES[name];button(`${name} · ${mv.type}`,()=>act(i));});button('뒤로',()=>render(st));
+   const m=mon(st,own());m.moves.forEach((name,i)=>{const mv=MOVES[name];button(`${name} · ${mv.type}`,()=>plan('move',i));});button('뒤로',()=>render(st));
   }else if(menu==='party'){
-   st[own()].forEach((m,i)=>{if(i!==st[active(own())]&&m.hp>0)button(`${SP[m.sp].name} ${m.hp}/${m.maxhp}`,()=>swap(i));});button('뒤로',()=>render(st));
-  }else{button('싸우다',()=>render(st,'moves'));button('수학몬',()=>render(st,'party'));button('나가기',exit);}
+   st[own()].forEach((m,i)=>{if(i!==st[active(own())]&&m.hp>0)button(`${SP[m.sp].name} ${m.hp}/${m.maxhp}`,()=>plan('swap',i));});button('뒤로',()=>render(st));
+   }else if(menu==='bag'){
+   let n=0;for(const id of itemIds)if(st.bags[own()][id]>0&&st[own()].some(m=>eligible(id,m))){n++;button(`${ITEMS[id].name} ×${st.bags[own()][id]}`,()=>render(st,'item:'+id,'어느 수학몬에게 사용할까?'));}
+   button('뒤로',()=>render(st));if(!n)line.textContent='지금 사용할 수 있는 아이템이 없어요.';
+  }else if(menu.startsWith('item:')){
+   const id=menu.slice(5);st[own()].forEach((m,i)=>{if(eligible(id,m))button(`${SP[m.sp].name} ${m.hp}/${m.maxhp}`,()=>plan('item',i,id));});button('뒤로',()=>render(st,'bag','어떤 아이템을 사용할까?'));
+  }else{button('가방',()=>render(st,'bag','어떤 아이템을 사용할까?'));button('싸우다',()=>render(st,'moves'));button('수학몬',()=>render(st,'party'));button('나가기',exit);}
  }
  function exit(){
-  closed=true;if(MM.ch)MM.client.removeChannel(MM.ch);MM={client:MM.client,ch:null,room:'',side:'',team:[],foe:[],state:null,ready:false};box.remove();
+  closed=true;clearTimeout(timer);offKeys?.();if(MM.ch)MM.client.removeChannel(MM.ch);MM={client:MM.client,ch:null,room:'',side:'',team:[],foe:[],state:null,ready:false};box.remove();
   if(arena&&B===arena){panel.remove();killHud();hideTb();B=null;scene='world';held.length=0;}
  }
  async function view(st){
@@ -5327,7 +5339,8 @@ function mmOpen(){ if(document.getElementById('mmoverlay'))return; if(!S||scene!
    if(step&&drawn){
     const side=step.side===own()?'p':'e',target=side==='p'?'e':'p';
     render(st,'main',st.log,true);
-    if(step.kind==='move'&&step.ok){
+    if(step.kind==='item'&&step.ok){SFX.heal();if(step.slot===drawn[active(step.side)])await playFx('heal',side,side,600);else await sleep(500);}
+    else if(step.kind==='move'&&step.ok){
      const mv=MOVES[step.move],spec=fxSpec(mv);
      await tween(170,k=>a[side+'X']=Math.sin(k*Math.PI)*(side==='p'?14:-14));
      if(spec.tier===2){a.banner={text:mv.name,sub:'',type:mv.type,t0:performance.now(),dur:900};await sleep(900);a.banner=null;}
@@ -5342,47 +5355,80 @@ function mmOpen(){ if(document.getElementById('mmoverlay'))return; if(!S||scene!
    project(st);drawn=st;render(st);
   }finally{animating=false;if(pending){const next=pending;pending=null;view(next);}}
  }
- function sendState(st){MM.state=st;MM.ch.send({type:'broadcast',event:'state',payload:{state:st}});view(st);}
- async function act(i){
-  const base=MM.state,k=own(),opp=other(k);
-  if(picking||animating||base.done||base.turn!==k)return;
-  const mv=MOVES[mon(base,k).moves[i]];if(!mv)return;
-  picking=true;panel.hidden=true;
-  let answer;
-  try{answer=await quiz(pickUnit(),{title:`${mv.name}! 맞히면 기술 성공`,timed:!mv.eff,record:false});}
-  finally{picking=false;panel.hidden=false;}
-  if(MM.state!==base){if(pending){const next=pending;pending=null;view(next);}return;}
-  const st=JSON.parse(JSON.stringify(base)),u=mon(st,k),v=mon(st,opp);
-  st.rev++;st.step={kind:'move',side:k,move:mv.name,ok:answer.ok};
-  st.log=`${SP[u.sp].name}의 ${mv.name}!`;
-  if(!answer.ok)st.log+=' 문제를 틀려 기술이 빗나갔다!';
-  else if(mv.eff==='heal'){u.hp=Math.min(u.maxhp,u.hp+Math.ceil(u.maxhp/2));st.step.hp=u.hp;st.log+=' HP 회복!';}
-  else {
-   const mult=effect(mv.type,spTypes(v.sp))*stab(u.sp,mv.type)*(answer.fast?1.5:1);
-   const damage=mult?dmgCalc(u,v,mv.power,mult):0;
-   v.hp=Math.max(0,v.hp-damage);st.step.hp=v.hp;
-   st.log+=answer.fast?` 급소! ${damage} 피해`:` ${damage} 피해`;
-   if(!v.hp){const n=st[opp].findIndex(m=>m.hp>0);if(n<0){st.done=true;st.winner=k;}else st[active(opp)]=n;}
-  }
-  st.turn=opp;sendState(st);
+ const itemIds=ITEM_ORDER.filter(id=>['heal','revive'].includes(ITEMS[id].kind));
+ const validBag=b=>b&&itemIds.every(id=>Number.isSafeInteger(b[id])&&b[id]>=0);
+ const bagCopy=()=>Object.fromEntries(itemIds.map(id=>[id,Math.max(0,Math.floor(Number(S.bag[id])||0))]));
+ const eligible=(id,m)=>ITEMS[id].kind==='revive'?m.hp===0:m.hp>0&&m.hp<m.maxhp;
+ let plans={},submitted=false,offKeys=null,timer=null;
+ function validPlan(st,k,p){
+  if(!p||p.rev!==st.rev)return false;
+  if(p.kind==='swap')return Number.isInteger(p.i)&&p.i!==st[active(k)]&&st[k][p.i]?.hp>0;
+  if(p.kind==='item')return itemIds.includes(p.id)&&st.bags[k][p.id]>0&&st[k][p.i]&&eligible(p.id,st[k][p.i])&&typeof p.ok==='boolean';
+  return p.kind==='move'&&Number.isInteger(p.i)&&mon(st,k).moves[p.i]!==undefined&&typeof p.ok==='boolean'&&typeof p.fast==='boolean';
  }
- function swap(i){const base=MM.state,k=own();if(animating||picking||base.done||base.turn!==k||!base[k][i]?.hp||i===base[active(k)])return;const st=JSON.parse(JSON.stringify(base));st.rev++;st[active(k)]=i;st.turn=other(k);st.step={kind:'swap',side:k};st.log=`가랏! ${SP[mon(st,k).sp].name}!`;sendState(st);}
+ async function plan(kind,i,id){
+  const st=MM.state;if(!st||st.done||picking||animating||submitted)return;
+  const p={kind,i,id,rev:st.rev};
+  if(kind!=='swap'){
+   const mv=kind==='move'?MOVES[mon(st,own()).moves[i]]:null;
+   picking=true;panel.hidden=true;
+   try{const r=await quiz(pickUnit(),{title:`${mv?.name||ITEMS[id].name}! 맞히면 성공`,timed:!!mv&&!mv.eff,record:false});p.ok=r.ok;p.fast=r.fast;}
+   finally{picking=false;panel.hidden=false;}
+  }
+  if(closed||st!==MM.state||!validPlan(st,own(),p))return;
+  submitted=true;render(st,'main','선택 완료 · 상대가 고르는 중…');
+  if(own()==='h'){plans.h=p;resolveRound();}
+  else {const ch=MM.ch;try{if(await ch.send({type:'broadcast',event:'plan',payload:p})==='ok')return;}catch(e){}if(!closed&&MM.state===st){submitted=false;render(st,'main','선택 전송 실패 · 다시 골라 주세요.');}}
+ }
+ function applyPlan(st,k,p){
+  const opp=other(k),u=mon(st,k),v=mon(st,opp);
+  st.step=null;
+  if(p.kind==='swap'){st[active(k)]=p.i;st.step={kind:'swap',side:k};st.log=`가랏! ${SP[mon(st,k).sp].name}!`;return;}
+  if(p.kind==='item'){
+   const m=st[k][p.i],it=ITEMS[p.id];st.step={kind:'item',side:k,ok:p.ok&&eligible(p.id,m),slot:p.i};st.log=`${it.name} 사용!`;
+   if(!st.step.ok){st.log+=' 사용하지 못했다.';return;}
+   st.bags[k][p.id]--;m.hp=it.kind==='revive'?Math.max(1,Math.floor(m.maxhp/2)):Math.min(m.maxhp,m.hp+it.amt);st.step.hp=m.hp;st.log+=` ${SP[m.sp].name} HP 회복!`;return;
+  }
+  const mv=MOVES[u.moves[p.i]];st.step={kind:'move',side:k,move:mv.name,ok:p.ok};st.log=`${SP[u.sp].name}의 ${mv.name}!`;
+  if(!p.ok){st.log+=' 문제를 틀려 기술이 빗나갔다!';return;}
+  if(mv.eff==='heal'){u.hp=Math.min(u.maxhp,u.hp+Math.ceil(u.maxhp/2));st.step.hp=u.hp;st.log+=' HP 회복!';return;}
+  const damage=dmgCalc(u,v,mv.power,effect(mv.type,spTypes(v.sp))*stab(u.sp,mv.type)*(p.fast?1.5:1));
+  v.hp=Math.max(0,v.hp-damage);st.step.hp=v.hp;st.log+=p.fast?` 급소! ${damage} 피해`:` ${damage} 피해`;
+  if(!v.hp){const n=st[opp].findIndex(m=>m.hp>0);if(n<0){st.done=true;st.winner=k;}else st[active(opp)]=n;}
+ }
+ function resolveRound(){
+  const base=MM.state;if(!base||base.done||!plans.h||!plans.g)return;
+  const first=crypto.getRandomValues(new Uint8Array(1))[0]%2?'h':'g',order=[first,other(first)],steps=[];
+  const st=JSON.parse(JSON.stringify(base));st.rev++;const actions=plans;plans={};
+  for(const k of order){if(st.done)break;
+   if(st[active(k)]!==base[active(k)]){st.step=null;st.log=`${SP[mon(base,k).sp].name} 기절! 이번 행동을 할 수 없다.`;}
+   else applyPlan(st,k,actions[k]);
+   steps.push(JSON.parse(JSON.stringify(st)));
+  }
+  if(steps.length){MM.ch.send({type:'broadcast',event:'round',payload:{steps}});acceptRound(steps);}
+ }
+ async function acceptRound(steps){
+  const old=MM.state;if(!old||!Array.isArray(steps)||!steps.length||steps.length>2||!steps.every(s=>validState(s)&&s.rev===old.rev+1))return;
+  MM.state=steps[steps.length-1];submitted=true;
+  for(const st of steps){await view(st);if(closed)return;}
+  submitted=false;render(MM.state);
+ }
+ function validState(s){return s&&validTeam(s.h)&&validTeam(s.g)&&validBag(s.bags?.h)&&validBag(s.bags?.g)&&[s.ai,s.bi].every(Number.isInteger)&&s.h[s.ai]&&s.g[s.bi]&&(!s.step||( ['h','g'].includes(s.step.side)&&['move','swap','item'].includes(s.step.kind)&&(s.step.kind!=='move'||Object.hasOwn(MOVES,s.step.move))));}
  const validTeam=t=>Array.isArray(t)&&t.length>0&&t.length<=6&&t.every(m=>m&&Object.hasOwn(SP,m.sp)&&[m.lvl,m.hp,m.maxhp,m.atk,m.def].every(Number.isSafeInteger)&&m.lvl>0&&m.lvl<=999&&m.hp>=0&&m.maxhp>0&&m.hp<=m.maxhp&&m.atk>0&&m.def>0&&Array.isArray(m.moves)&&m.moves.length>0&&m.moves.length<=6&&m.moves.every(n=>Object.hasOwn(MOVES,n)));
- async function connect(host,code){if(MM.ch||MM.busy)return;let t=teamPick();if(!t.length){msg('최소 1마리를 선택하세요.');return;}MM.busy=true;try{MM.team=t.map(m=>{const moves=movesOf(m).filter(x=>!x.eff||x.eff==='heal').map(x=>x.name);return {sp:m.sp,lvl:m.lvl,hp:m.hp,maxhp:m.maxhp,atk:m.atk,def:m.def,moves:moves.length?moves:['발버둥']};});if(!validTeam(MM.team)){msg('팀 데이터를 읽을 수 없습니다.');return;}
- if(!window.supabase){await new Promise((res,rej)=>{let q=document.createElement('script');q.src='https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2';q.onload=res;q.onerror=rej;document.head.append(q);});} if(!box.isConnected)return; MM.client ||=window.supabase.createClient(MM_URL,MM_KEY,{auth:{persistSession:false,autoRefreshToken:false}});MM.room=code;MM.side=host?'host':'guest';MM.ch=MM.client.channel('mm-battle-v2-'+code,{config:{broadcast:{self:false}}});
+ async function connect(host,code){if(MM.ch||MM.busy){msg('이미 연결 중입니다. 다른 방은 닫기 후 시도하세요.');return;}let t=teamPick();if(!t.length){msg('최소 1마리를 선택하세요.');return;}MM.busy=true;msg(host?'방을 만드는 중…':'방을 찾는 중…');try{MM.team=t.map(m=>{const moves=movesOf(m).filter(x=>!x.eff||x.eff==='heal').map(x=>x.name);return {sp:m.sp,lvl:m.lvl,hp:m.hp,maxhp:m.maxhp,atk:m.atk,def:m.def,moves:moves.length?moves:['발버둥']};});if(!validTeam(MM.team)){msg('팀 데이터를 읽을 수 없습니다.');return;}
+ if(!window.supabase){await new Promise((res,rej)=>{let q=document.createElement('script');q.src='https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2';q.onload=res;q.onerror=rej;document.head.append(q);});} if(!box.isConnected)return; MM.client ||=window.supabase.createClient(MM_URL,MM_KEY,{auth:{persistSession:false,autoRefreshToken:false}});MM.room=code;MM.side=host?'host':'guest';MM.ch=MM.client.channel('mm-battle-v3-'+code,{config:{broadcast:{self:false,ack:true}}});
  const ch=MM.ch;
- const announce=()=>ch.send({type:'broadcast',event:'team',payload:{side:MM.side,team:MM.team}});
+ const announce=()=>ch.send({type:'broadcast',event:'team',payload:{side:MM.side,team:MM.team,bag:bagCopy()}});
  ch.on('broadcast',{event:'team'},({payload})=>{
-  if(MM.ch!==ch || MM.state || payload?.side!==(host?'guest':'host') || !validTeam(payload.team))return;
+  if(MM.ch!==ch || MM.state || payload?.side!==(host?'guest':'host') || !validTeam(payload.team)||!validBag(payload.bag))return;
   MM.foe=payload.team;msg('친구와 연결되었습니다.');
-  if(host){sendState({h:MM.team,g:MM.foe,ai:0,bi:0,rev:0,turn:'h',done:false,log:'호스트 선공!'});}
+  if(host){const st={h:MM.team,g:MM.foe,bags:{h:bagCopy(),g:payload.bag},ai:0,bi:0,rev:0,done:false,log:'이번 턴의 행동을 고르세요.'};MM.state=st;ch.send({type:'broadcast',event:'state',payload:{state:st}});view(st);}
   else if(!MM.ready){MM.ready=true;announce();}
  });
- ch.on('broadcast',{event:'state'},({payload})=>{const st=payload?.state,prev=MM.state;
-  if(MM.ch!==ch||!st||(!prev&&host)||st.rev!==(prev?prev.rev+1:0)||!validTeam(st.h)||!validTeam(st.g)||![st.ai,st.bi].every(Number.isInteger)||!st.h[st.ai]||!st.g[st.bi]||!['h','g'].includes(st.turn))return;
-  if(prev&&(!st.step||st.step.side!==other(own())||prev.turn!==st.step.side||!['move','swap'].includes(st.step.kind)||(st.step.kind==='move'&&!Object.hasOwn(MOVES,st.step.move))))return;
-  MM.state=st;view(st);
- });MM.ch.subscribe(status=>{if(status==='SUBSCRIBED'){msg('방 코드 '+code+' · 친구에게 전달하세요.');MM.ch.send({type:'broadcast',event:'team',payload:{side:MM.side,team:MM.team}});}else if(['CHANNEL_ERROR','TIMED_OUT','CLOSED'].includes(status)&&MM.ch===ch){if(arena){const note=document.createElement('div');note.textContent='연결이 끊겼습니다. 나간 뒤 다시 시도해 주세요.';panel.append(note);}else msg('연결이 끊겼습니다. 닫고 다시 시도해 주세요.');}});}catch(e){if(MM.ch)MM.client.removeChannel(MM.ch);MM.ch=null;msg('연결을 시작하지 못했습니다. 다시 시도해 주세요.');}finally{MM.busy=false;}}
+ ch.on('broadcast',{event:'state'},({payload})=>{const st=payload?.state;if(MM.ch!==ch||host||MM.state||!validState(st)||st.rev!==0)return;clearTimeout(timer);MM.state=st;view(st);});
+ ch.on('broadcast',{event:'plan'},({payload})=>{if(MM.ch===ch&&host&&MM.state&&!MM.state.done&&!plans.g&&validPlan(MM.state,'g',payload)){plans.g=payload;resolveRound();}});
+ ch.on('broadcast',{event:'round'},({payload})=>{if(MM.ch===ch&&!host&&submitted)acceptRound(payload?.steps);});
+ MM.ch.subscribe(status=>{if(status==='SUBSCRIBED'){msg(host?'방 코드 '+code+' · 친구를 기다리는 중…':'방 코드 '+code+' · 방장 응답을 기다리는 중…');announce();if(!host){clearTimeout(timer);timer=setTimeout(()=>{if(MM.ch===ch&&!MM.state){MM.ch=null;MM.ready=false;MM.client.removeChannel(ch);msg('방장 응답이 없어요. 방 코드와 버전을 확인하고 다시 참가하세요.');}},12000);}}else if(['CHANNEL_ERROR','TIMED_OUT','CLOSED'].includes(status)&&MM.ch===ch){if(arena){const note=document.createElement('div');note.textContent='연결이 끊겼습니다. 나간 뒤 다시 시도해 주세요.';panel.append(note);}else msg('연결이 끊겼습니다. 닫고 다시 시도해 주세요.');}});}catch(e){if(MM.ch)MM.client.removeChannel(MM.ch);MM.ch=null;msg('연결을 시작하지 못했습니다. 다시 시도해 주세요.');}finally{MM.busy=false;}}
  box.querySelector('#mmmake').onclick=()=>connect(true,Array.from(crypto.getRandomValues(new Uint32Array(6)),n=>'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'[n%36]).join(''));box.querySelector('#mmjoin').onclick=()=>{let c=box.querySelector('#mmroom').value.trim().toUpperCase();if(/^[A-Z0-9]{6}$/.test(c))connect(false,c);else msg('6자리 코드를 입력하세요.');};box.querySelector('#mmexit').onclick=exit; }
 
 </script>

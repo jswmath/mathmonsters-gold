@@ -234,7 +234,7 @@ button:focus-visible{outline:3px solid #6ab0ff;outline-offset:2px}
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 </style>
 
-<div id="app"><button onclick="mmOpen()" style="align-self:center;background:#b3315e;color:white;border:2px solid #f6d777;border-radius:10px;padding:10px;font:700 16px sans-serif;cursor:pointer">친구와 대전 (시험 기능)</button>
+<div id="app"><button onclick="mmOpen()" style="align-self:center;background:#b3315e;color:white;border:2px solid #f6d777;border-radius:10px;padding:10px;font:700 16px sans-serif;cursor:pointer">친구와 온라인 대전</button>
   <div id="console">
     <div id="bezel">
       <div id="screen">
@@ -3374,7 +3374,7 @@ function pickUnit() {
   if (u > 1 && Math.random() < .25) return R(1, u - 1);
   return u;
 }
-function quiz(unit, { title = '문제!', timed = false } = {}) {
+function quiz(unit, { title = '문제!', timed = false, record = true } = {}) {
   const q = genQ(unit);
   const opts = shuffle(q.opts.slice());
   lastQ = { q, opts };
@@ -3393,8 +3393,8 @@ function quiz(unit, { title = '문제!', timed = false } = {}) {
       answered = true; const ok = opts[i] === q.a, fast = timed && ok && performance.now() - t0 < 8000;
       const ci = opts.indexOf(q.a); btns[ci].classList.add('ok'); if (!ok) btns[i].classList.add('ng');
       el.classList.add('done'); const bar = el.querySelector('.tbar'); if (bar) bar.remove();
-      const st = S.stats[q.u]; st[0]++; if (ok) st[1]++;
-      if (!ok) { S.notes.unshift({ u: q.u, label: q.label, q: q.q, a: q.a, mine: opts[i], ex: q.ex }); if (S.notes.length > 80) S.notes.length = 80; }
+      if (record) { const st = S.stats[q.u]; st[0]++; if (ok) st[1]++; }
+      if (record && !ok) { S.notes.unshift({ u: q.u, label: q.label, q: q.q, a: q.a, mine: opts[i], ex: q.ex }); if (S.notes.length > 80) S.notes.length = 80; }
       const f = el.querySelector('.qf'); f.hidden = false;
       f.innerHTML = ok ? `<span class="good">정답!</span> ${fast ? '<b>번개 같은 풀이! 급소 찬스!</b>' : ''}<span class="go">▶ 계속</span><div class="ex">${M(q.ex)}</div>`
         : `<span class="bad">오답!</span> 정답은 <span class="ans">${M(q.a)}</span><span class="go">▶ 계속</span><div class="ex">${M(q.ex)}</div>`;
@@ -5283,34 +5283,106 @@ titleFlow();
   });
 })();
 
-// Login-free Realtime battle prototype. Team data is copied; original save is never mutated.
+// Login-free Realtime battle. Team data is copied; original save is never mutated.
 const MM_URL='https://euldlfddlknrovkvnaqz.supabase.co', MM_KEY='sb_publishable_nAJw-XC5ZegzVsrKPknAlw_bNDF-9V6';
 let MM={client:null,ch:null,room:'',side:'',team:[],foe:[],state:null,ready:false};
-function mmOpen(){ if(document.getElementById('mmoverlay'))return; if(!S){toast('게임을 시작한 뒤 이용해 주세요.');return;} const box=document.createElement('div');box.id='mmoverlay';box.style='position:fixed;z-index:999999;inset:0;background:#10101eee;color:white;display:grid;place-items:center;font:16px sans-serif;padding:12px';box.innerHTML='<section style="background:#25243a;border:2px solid #e1b23e;border-radius:14px;padding:18px;width:min(560px,95vw);max-height:90vh;overflow:auto"><h2>친구와 온라인 대결</h2><p>보유 몬 복사본으로 최대 6마리 팀을 구성합니다. 원본 저장 데이터는 바뀌지 않습니다.</p><div id="mmchoices"></div><p><button id="mmmake">방 만들기</button> <input id="mmroom" placeholder="6자리 코드" maxlength="6"><button id="mmjoin">참가</button></p><div id="mmmsg"></div><div id="mmfight"></div><button id="mmexit">닫기</button></section>';document.body.append(box);let choices=box.querySelector('#mmchoices'),mons=[...(S.party||[]),...(S.box||[])].filter(m=>m && SP[m.sp] && m.hp>0);
+function mmOpen(){ if(document.getElementById('mmoverlay'))return; if(!S||scene!=='world'||busy||MM.ch){toast('필드에서 친구 대전을 시작해 주세요.');return;} const box=document.createElement('div');box.id='mmoverlay';box.style='position:fixed;z-index:999999;inset:0;background:#10101eee;color:white;display:grid;place-items:center;font:16px sans-serif;padding:12px';box.innerHTML='<section style="background:#25243a;border:2px solid #e1b23e;border-radius:14px;padding:18px;width:min(560px,95vw);max-height:90vh;overflow:auto"><h2>친구와 온라인 대결</h2><p>보유 몬 복사본으로 최대 6마리 팀을 구성합니다. 원본 저장 데이터는 바뀌지 않습니다.</p><div id="mmchoices"></div><p><button id="mmmake">방 만들기</button> <input id="mmroom" placeholder="6자리 코드" maxlength="6"><button id="mmjoin">참가</button></p><div id="mmmsg"></div><div id="mmfight"></div><button id="mmexit">닫기</button></section>';document.body.append(box);let choices=box.querySelector('#mmchoices'),mons=[...(S.party||[]),...(S.box||[])].filter(m=>m && SP[m.sp] && m.hp>0);
  mons.forEach((m,i)=>{let n=SP?.[m.sp]?.name||m.name||('몬 '+(i+1));choices.insertAdjacentHTML('beforeend',`<label style="display:block;padding:4px"><input type=checkbox value="${i}"> ${n} Lv.${m.lvl||1} HP ${m.hp||'?'} / ${m.maxhp||'?'}</label>`)});
  const msg=t=>box.querySelector('#mmmsg').textContent=t;
  const teamPick=()=>[...choices.querySelectorAll('input:checked')].slice(0,6).map(c=>JSON.parse(JSON.stringify(mons[+c.value])));
- const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
  const active=k=>k==='h'?'ai':'bi';
- function view(){let f=box.querySelector('#mmfight'); if(!MM.state){f.innerHTML='';return;}let st=MM.state, own=MM.side==='host'?'h':'g', opp=own==='h'?'g':'h', a=st[own],b=st[opp];
- if(st.done){f.innerHTML=`<h3>${st.winner===own?'승리!':'패배'} (원본 기록은 변경되지 않음)</h3>`;return;}
- f.innerHTML=`<h3>내 팀 ${a.length}마리 · 상대 팀 ${b.length}마리</h3><p>내 차례: ${st.turn===own?'예':'아니오'}</p>${a.map((m,i)=>`<div>${esc(m.label)} HP ${m.hp}/${m.maxhp} ${i===st[active(own)]?'(출전중)':''}</div>`).join('')}<hr>${b.map(m=>`<div>${esc(m.label)} HP ${m.hp}/${m.maxhp}</div>`).join('')}<div id="mmlog" style="padding:8px;color:#ffe28a">${esc(st.log||'대전 시작')}</div><div id="mmacts"></div>`;
- if(st.turn===own){let ac=f.querySelector('#mmacts'); if(a[st[active(own)]]?.hp>0){(a[st[active(own)]].moves||[]).forEach((mv,i)=>{let bt=document.createElement('button');bt.textContent=mv.name+' ('+mv.power+')';bt.onclick=()=>act(i);ac.append(bt);});}else{a.forEach((m,i)=>{if(m.hp>0){let bt=document.createElement('button');bt.textContent='교체: '+m.label;bt.onclick=()=>swap(i);ac.append(bt);}})}} }
- function sendState(st){MM.state=st;MM.ch.send({type:'broadcast',event:'state',payload:{state:st}});view();}
- function act(mi){let st=MM.state,own=MM.side==='host'?'h':'g',opp=own==='h'?'g':'h';if(st.done||st.turn!==own)return;let u=st[own][st[active(own)]],v=st[opp][st[active(opp)]],mv=u?.moves[mi]; if(!u||!v||!mv)return;let power=Math.max(1,Number(mv.power)||20),atk=Math.max(1,u.atk||u.attack||20),def=Math.max(1,v.def||v.defense||20);let dmg=Math.max(1,Math.floor((power*atk/def)/3)+2);v.hp=Math.max(0,v.hp-dmg);st.log=`${u.label}의 ${mv.name}! ${v.label}에게 ${dmg} 피해`;
- if(v.hp<=0){let ni=st[opp].findIndex(m=>m.hp>0);if(ni<0){st.done=true;st.winner=own;st.log+=' — 승리!';}else st[active(opp)]=ni;} if(!st.done)st.turn=opp;sendState(st);}
- function swap(i){let st=MM.state,own=MM.side==='host'?'h':'g';if(st.turn!==own||st[own][i]?.hp<=0)return;st[active(own)]=i;st.turn=own==='h'?'g':'h';st.log='수학몬을 교체했습니다.';sendState(st);}
- async function connect(host,code){if(MM.ch||MM.busy)return;let t=teamPick();if(!t.length){msg('최소 1마리를 선택하세요.');return;}MM.busy=true;try{MM.team=t.map((m,i)=>({label:(SP?.[m.sp]?.name||m.name||'수학몬')+' Lv.'+(m.lvl||1),hp:Number(m.hp)||1,maxhp:Number(m.maxhp)||Number(m.hp)||1,atk:Number(m.atk||m.attack)||20,def:Number(m.def||m.defense)||20,moves:movesOf(m).map(x=>({name:x.name,power:Number(x.power)||20}))}));
- if(!window.supabase){await new Promise((res,rej)=>{let q=document.createElement('script');q.src='https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2';q.onload=res;q.onerror=rej;document.head.append(q);});} if(!box.isConnected)return; MM.client ||=window.supabase.createClient(MM_URL,MM_KEY,{auth:{persistSession:false,autoRefreshToken:false}});MM.room=code;MM.side=host?'host':'guest';MM.ch=MM.client.channel('mm-battle-'+code,{config:{broadcast:{self:false}}});
+ const own=()=>MM.side==='host'?'h':'g', other=k=>k==='h'?'g':'h';
+ const mon=(st,k)=>st[k][st[active(k)]];
+ let panel=null, arena=null, animating=false, picking=false, closed=false, drawn=null, pending=null;
+ function mount(){
+  box.hidden=true;box.style.display='none';hideTb();held.length=0;
+  arena=B={o:{kind:'online'},theme:CUR?.theme||'forest',a:{eX:0,eY:0,pX:0,pY:0,eVis:true,pVis:true,eAlpha:1,pAlpha:1,eScale:1,pScale:1,flash:0}};
+  scene='battle';panel=document.createElement('div');panel.className='box';
+  panel.style='position:absolute;inset:auto 1% 1%;z-index:8;padding:1cqw;font-size:3.4cqw;pointer-events:auto';ui.append(panel);
+ }
+ function project(st){for(const [slot,k] of [['p',own()],['e',other(own())]]){const m=mon(st,k);arena[slot]={sp:m.sp,lvl:m.lvl,hp:m.hp,maxhp:m.maxhp,xp:0};}hud();}
+ function button(text,fn){const b=document.createElement('button');b.type='button';b.textContent=text;b.style='font:inherit;padding:.35em;margin:.12em;cursor:pointer';b.onclick=fn;panel.append(b);}
+ function render(st,menu='main',text=st.log,locked=false){
+  panel.replaceChildren();const line=document.createElement('div');line.textContent=text;panel.append(line);
+  if(locked)return;
+  if(st.done){button(st.winner===own()?'승리! · 나가기':'패배 · 나가기',exit);return;}
+  if(st.turn!==own()){button('상대 차례 · 나가기',exit);return;}
+  if(menu==='moves'){
+   const m=mon(st,own());m.moves.forEach((name,i)=>{const mv=MOVES[name];button(`${name} · ${mv.type}`,()=>act(i));});button('뒤로',()=>render(st));
+  }else if(menu==='party'){
+   st[own()].forEach((m,i)=>{if(i!==st[active(own())]&&m.hp>0)button(`${SP[m.sp].name} ${m.hp}/${m.maxhp}`,()=>swap(i));});button('뒤로',()=>render(st));
+  }else{button('싸우다',()=>render(st,'moves'));button('수학몬',()=>render(st,'party'));button('나가기',exit);}
+ }
+ function exit(){
+  closed=true;if(MM.ch)MM.client.removeChannel(MM.ch);MM={client:MM.client,ch:null,room:'',side:'',team:[],foe:[],state:null,ready:false};box.remove();
+  if(arena&&B===arena){panel.remove();killHud();hideTb();B=null;scene='world';held.length=0;}
+ }
+ async function view(st){
+  if(closed)return;
+  if(animating||picking){pending=st;return;}
+  if(!arena){mount();project(st);drawn=st;render(st);return;}
+  animating=true;
+  try{
+   const step=st.step,a=arena.a;
+   if(step&&drawn){
+    const side=step.side===own()?'p':'e',target=side==='p'?'e':'p';
+    render(st,'main',st.log,true);
+    if(step.kind==='move'&&step.ok){
+     const mv=MOVES[step.move],spec=fxSpec(mv);
+     await tween(170,k=>a[side+'X']=Math.sin(k*Math.PI)*(side==='p'?14:-14));
+     if(spec.tier===2){a.banner={text:mv.name,sub:'',type:mv.type,t0:performance.now(),dur:900};await sleep(900);a.banner=null;}
+     await playFx(spec.style||mv.type,side,mv.eff==='heal'?side:target,spec.tier===2?1250:spec.tier?900:650,spec,mv);
+     if(!mv.eff){SFX.hit();a[target+'Blink']=true;await tween(300,k=>a[target+'X']=Math.sin(k*Math.PI*4)*4);a[target+'Blink']=false;a[target+'X']=0;}
+     if(Number.isFinite(step.hp)){const hit=mv.eff==='heal'?side:target;arena[hit].hp=step.hp;hud();await sleep(260);}
+    }else if(step.kind==='move'){await sleep(550);}
+    for(const [slot,k] of [['p',own()],['e',other(own())]]){
+     if(drawn[active(k)]!==st[active(k)]){a[slot+'Scale']=0;arena[slot]={...mon(st,k),xp:0};hud();await tween(280,t=>a[slot+'Scale']=t);}
+    }
+   }
+   project(st);drawn=st;render(st);
+  }finally{animating=false;if(pending){const next=pending;pending=null;view(next);}}
+ }
+ function sendState(st){MM.state=st;MM.ch.send({type:'broadcast',event:'state',payload:{state:st}});view(st);}
+ async function act(i){
+  const base=MM.state,k=own(),opp=other(k);
+  if(picking||animating||base.done||base.turn!==k)return;
+  const mv=MOVES[mon(base,k).moves[i]];if(!mv)return;
+  picking=true;panel.hidden=true;
+  let answer;
+  try{answer=await quiz(pickUnit(),{title:`${mv.name}! 맞히면 기술 성공`,timed:!mv.eff,record:false});}
+  finally{picking=false;panel.hidden=false;}
+  if(MM.state!==base){if(pending){const next=pending;pending=null;view(next);}return;}
+  const st=JSON.parse(JSON.stringify(base)),u=mon(st,k),v=mon(st,opp);
+  st.rev++;st.step={kind:'move',side:k,move:mv.name,ok:answer.ok};
+  st.log=`${SP[u.sp].name}의 ${mv.name}!`;
+  if(!answer.ok)st.log+=' 문제를 틀려 기술이 빗나갔다!';
+  else if(mv.eff==='heal'){u.hp=Math.min(u.maxhp,u.hp+Math.ceil(u.maxhp/2));st.step.hp=u.hp;st.log+=' HP 회복!';}
+  else {
+   const mult=effect(mv.type,spTypes(v.sp))*stab(u.sp,mv.type)*(answer.fast?1.5:1);
+   const damage=mult?dmgCalc(u,v,mv.power,mult):0;
+   v.hp=Math.max(0,v.hp-damage);st.step.hp=v.hp;
+   st.log+=answer.fast?` 급소! ${damage} 피해`:` ${damage} 피해`;
+   if(!v.hp){const n=st[opp].findIndex(m=>m.hp>0);if(n<0){st.done=true;st.winner=k;}else st[active(opp)]=n;}
+  }
+  st.turn=opp;sendState(st);
+ }
+ function swap(i){const base=MM.state,k=own();if(animating||picking||base.done||base.turn!==k||!base[k][i]?.hp||i===base[active(k)])return;const st=JSON.parse(JSON.stringify(base));st.rev++;st[active(k)]=i;st.turn=other(k);st.step={kind:'swap',side:k};st.log=`가랏! ${SP[mon(st,k).sp].name}!`;sendState(st);}
+ const validTeam=t=>Array.isArray(t)&&t.length>0&&t.length<=6&&t.every(m=>m&&Object.hasOwn(SP,m.sp)&&[m.lvl,m.hp,m.maxhp,m.atk,m.def].every(Number.isSafeInteger)&&m.lvl>0&&m.lvl<=999&&m.hp>=0&&m.maxhp>0&&m.hp<=m.maxhp&&m.atk>0&&m.def>0&&Array.isArray(m.moves)&&m.moves.length>0&&m.moves.length<=6&&m.moves.every(n=>Object.hasOwn(MOVES,n)));
+ async function connect(host,code){if(MM.ch||MM.busy)return;let t=teamPick();if(!t.length){msg('최소 1마리를 선택하세요.');return;}MM.busy=true;try{MM.team=t.map(m=>{const moves=movesOf(m).filter(x=>!x.eff||x.eff==='heal').map(x=>x.name);return {sp:m.sp,lvl:m.lvl,hp:m.hp,maxhp:m.maxhp,atk:m.atk,def:m.def,moves:moves.length?moves:['발버둥']};});if(!validTeam(MM.team)){msg('팀 데이터를 읽을 수 없습니다.');return;}
+ if(!window.supabase){await new Promise((res,rej)=>{let q=document.createElement('script');q.src='https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2';q.onload=res;q.onerror=rej;document.head.append(q);});} if(!box.isConnected)return; MM.client ||=window.supabase.createClient(MM_URL,MM_KEY,{auth:{persistSession:false,autoRefreshToken:false}});MM.room=code;MM.side=host?'host':'guest';MM.ch=MM.client.channel('mm-battle-v2-'+code,{config:{broadcast:{self:false}}});
  const ch=MM.ch;
  const announce=()=>ch.send({type:'broadcast',event:'team',payload:{side:MM.side,team:MM.team}});
  ch.on('broadcast',{event:'team'},({payload})=>{
-  if(MM.ch!==ch || MM.state || payload?.side!==(host?'guest':'host') || !Array.isArray(payload.team) || !payload.team.length || payload.team.length>6)return;
+  if(MM.ch!==ch || MM.state || payload?.side!==(host?'guest':'host') || !validTeam(payload.team))return;
   MM.foe=payload.team;msg('친구와 연결되었습니다.');
-  if(host){sendState({h:MM.team,g:MM.foe,ai:0,bi:0,turn:'h',done:false,log:'호스트 선공!'});}
+  if(host){sendState({h:MM.team,g:MM.foe,ai:0,bi:0,rev:0,turn:'h',done:false,log:'호스트 선공!'});}
   else if(!MM.ready){MM.ready=true;announce();}
  });
- ch.on('broadcast',{event:'state'},({payload})=>{const st=payload?.state;if(MM.ch!==ch||(!MM.state&&host)||!Array.isArray(st?.h)||!Array.isArray(st?.g)||![st.ai,st.bi].every(Number.isInteger)||!st.h[st.ai]||!st.g[st.bi])return;MM.state=st;msg('대전 연결됨 · 방 코드 '+code);view();});MM.ch.subscribe(status=>{if(status==='SUBSCRIBED'){msg('방 코드 '+code+' · 친구에게 전달하세요.');MM.ch.send({type:'broadcast',event:'team',payload:{side:MM.side,team:MM.team}});}else if(['CHANNEL_ERROR','TIMED_OUT','CLOSED'].includes(status)&&MM.ch===ch){msg('연결이 끊겼습니다. 닫고 다시 시도해 주세요.');}});}catch(e){if(MM.ch)MM.client.removeChannel(MM.ch);MM.ch=null;msg('연결을 시작하지 못했습니다. 다시 시도해 주세요.');}finally{MM.busy=false;}}
- box.querySelector('#mmmake').onclick=()=>connect(true,Array.from(crypto.getRandomValues(new Uint32Array(6)),n=>'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'[n%36]).join(''));box.querySelector('#mmjoin').onclick=()=>{let c=box.querySelector('#mmroom').value.trim().toUpperCase();if(/^[A-Z0-9]{6}$/.test(c))connect(false,c);else msg('6자리 코드를 입력하세요.');};box.querySelector('#mmexit').onclick=()=>{if(MM.ch)MM.client.removeChannel(MM.ch);MM={client:MM.client,ch:null,room:'',side:'',team:[],foe:[],state:null,ready:false};box.remove();}; }
+ ch.on('broadcast',{event:'state'},({payload})=>{const st=payload?.state,prev=MM.state;
+  if(MM.ch!==ch||!st||(!prev&&host)||st.rev!==(prev?prev.rev+1:0)||!validTeam(st.h)||!validTeam(st.g)||![st.ai,st.bi].every(Number.isInteger)||!st.h[st.ai]||!st.g[st.bi]||!['h','g'].includes(st.turn))return;
+  if(prev&&(!st.step||st.step.side!==other(own())||prev.turn!==st.step.side||!['move','swap'].includes(st.step.kind)||(st.step.kind==='move'&&!Object.hasOwn(MOVES,st.step.move))))return;
+  MM.state=st;view(st);
+ });MM.ch.subscribe(status=>{if(status==='SUBSCRIBED'){msg('방 코드 '+code+' · 친구에게 전달하세요.');MM.ch.send({type:'broadcast',event:'team',payload:{side:MM.side,team:MM.team}});}else if(['CHANNEL_ERROR','TIMED_OUT','CLOSED'].includes(status)&&MM.ch===ch){if(arena){const note=document.createElement('div');note.textContent='연결이 끊겼습니다. 나간 뒤 다시 시도해 주세요.';panel.append(note);}else msg('연결이 끊겼습니다. 닫고 다시 시도해 주세요.');}});}catch(e){if(MM.ch)MM.client.removeChannel(MM.ch);MM.ch=null;msg('연결을 시작하지 못했습니다. 다시 시도해 주세요.');}finally{MM.busy=false;}}
+ box.querySelector('#mmmake').onclick=()=>connect(true,Array.from(crypto.getRandomValues(new Uint32Array(6)),n=>'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'[n%36]).join(''));box.querySelector('#mmjoin').onclick=()=>{let c=box.querySelector('#mmroom').value.trim().toUpperCase();if(/^[A-Z0-9]{6}$/.test(c))connect(false,c);else msg('6자리 코드를 입력하세요.');};box.querySelector('#mmexit').onclick=exit; }
 
 </script>
